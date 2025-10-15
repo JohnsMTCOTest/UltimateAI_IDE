@@ -1,6 +1,13 @@
-
-import streamlit as st
 import os
+
+# Use Render-provided PORT or default to 8501 for local dev
+port = int(os.environ.get("PORT", 8501))
+
+# Set Streamlit config programmatically
+import streamlit as st
+
+st.set_page_config(page_title="UltimateAI_IDE", layout="wide")
+
 from modules.load_models import load_models
 from modules.app_builder import build_app
 from modules.saas_builder import build_saas
