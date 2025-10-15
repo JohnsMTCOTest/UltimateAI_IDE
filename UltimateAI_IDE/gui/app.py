@@ -3,11 +3,10 @@ import os
 import streamlit as st
 
 # -------------------------------
-# Fix ModuleNotFoundError on Render
-# -------------------------------
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(ROOT_DIR)
-
+# Absolute path to UltimateAI_IDE root
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # go up from gui/ to UltimateAI_IDE
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
 # -------------------------------
 # Configure Streamlit for Render
 # -------------------------------
