@@ -9,6 +9,16 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(ROOT_DIR)
 
 # -------------------------------
+# Configure Streamlit for Render
+# -------------------------------
+# Use Render's PORT or default 8501
+port = int(os.environ.get("PORT", 8501))
+os.environ["STREAMLIT_SERVER_PORT"] = str(port)
+os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
+os.environ["STREAMLIT_SERVER_ENABLECORS"] = "false"
+os.environ["STREAMLIT_SERVER_ADDRESS"] = "0.0.0.0"
+
+# -------------------------------
 # Imports from your modules
 # -------------------------------
 from modules.load_models import load_models
@@ -27,10 +37,10 @@ from gui.git_integration import git_controls
 # -------------------------------
 # Streamlit Config
 # -------------------------------
-port = int(os.environ.get("PORT", 8501))
 st.set_page_config(page_title="UltimateAI_IDE", layout="wide")
 st.title("UltimateAI_IDE")
 st.markdown("**Status:** Initial deployment successful! Render app is running.")
+st.text(f"Streamlit running on port {port}")
 
 # -------------------------------
 # Layout: 2 Columns for Agent & Architect
@@ -146,4 +156,3 @@ if st.button('Run'):
             multi_file_editor(project_path)
             file_tree(project_path)
             git_controls(project_path)
-
