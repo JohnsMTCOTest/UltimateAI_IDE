@@ -1,21 +1,29 @@
 import sys
 import os
+import threading
 import streamlit as st
 
 # -------------------------------
-# Absolute path to UltimateAI_IDE root
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # go up from gui/ to UltimateAI_IDE
+# Fix ModuleNotFoundError on Render
+# -------------------------------
+# Absolute path to UltimateAI_IDE root (parent of gui/)
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.append(ROOT_DIR)
+
+# Debugging: check paths
+print("ROOT_DIR =", ROOT_DIR)
+print("sys.path =", sys.path)
+print("modules exists?", os.path.exists(os.path.join(ROOT_DIR, "modules")))
+
 # -------------------------------
 # Configure Streamlit for Render
 # -------------------------------
-# Use Render's PORT or default 8501
 port = int(os.environ.get("PORT", 8501))
 os.environ["STREAMLIT_SERVER_PORT"] = str(port)
+os.environ["STREAMLIT_SERVER_ADDRESS"] = "0.0.0.0"
 os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
 os.environ["STREAMLIT_SERVER_ENABLECORS"] = "false"
-os.environ["STREAMLIT_SERVER_ADDRESS"] = "0.0.0.0"
 
 # -------------------------------
 # Imports from your modules
@@ -42,18 +50,29 @@ st.markdown("**Status:** Initial deployment successful! Render app is running.")
 st.text(f"Streamlit running on port {port}")
 
 # -------------------------------
+# Load AI Models Asynchronously
+# -------------------------------
+def async_load_models():
+    try:
+        load_models()
+        st.success('AI models loaded!')
+    except Exception as e:
+        st.error(f"Error loading models: {e}")
+
+threading.Thread(target=async_load_models, daemon=True).start()
+st.text("Loading AI models in background...")
+
+# -------------------------------
 # Layout: 2 Columns for Agent & Architect
 # -------------------------------
 col1, col2 = st.columns(2)
 
 with col1:
     st.header("Agent Workspace")
-    st.write("This is where the Agent will generate and preview code.")
     st.text_area("Agent Output", height=300, placeholder="Agent output will appear here...")
 
 with col2:
     st.header("Architect Workspace")
-    st.write("This is where the Architect reviews Agent code and approves or requests changes.")
     st.text_area("Architect Feedback", height=300, placeholder="Architect feedback will appear here...")
 
 # -------------------------------
@@ -71,20 +90,12 @@ st.button("Request Changes")
 os.makedirs('projects', exist_ok=True)
 
 # -------------------------------
-# Load AI Models
-# -------------------------------
-st.text('Loading AI models...')
-load_models()
-st.success('AI models loaded!')
-
-# -------------------------------
 # Sidebar: Mode & Template Selection
 # -------------------------------
 mode = st.sidebar.selectbox('Mode', ['Plan Project','Build App','Generate & Test Code','Build SaaS'])
 template_choice = st.sidebar.selectbox('Template', ['None','To-Do App','SaaS CRM','Blog App'])
 templates = {'To-Do App': TO_DO_APP,'SaaS CRM': SAAS_CRM,'Blog App': BLOG_APP}
 
-# User Prompt Handling
 if template_choice != 'None':
     user_prompt = templates[template_choice]
 else:
@@ -105,7 +116,7 @@ if st.sidebar.button('Create Project'):
         file_tree(project_path)
         git_controls(project_path)
 
-        # Frontend live preview
+        # Frontend live preview (safely check if file exists)
         frontend_file = os.path.join(project_path, 'frontend', 'build', 'index.html')
         if os.path.exists(frontend_file):
             live_preview(frontend_file)
