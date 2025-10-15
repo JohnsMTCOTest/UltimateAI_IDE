@@ -1,8 +1,6 @@
 import os
 import sys
 import streamlit as st
-import subprocess
-import time
 from threading import Thread
 
 # ---- Fix Python module import ----
@@ -71,7 +69,12 @@ if st.sidebar.button('Create Project'):
         multi_file_editor(project_path)
         file_tree(project_path)
         git_controls(project_path)
-        watch_and_preview(project_path)
+
+        built_index = os.path.join(project_path, 'frontend', 'build', 'index.html')
+        if os.path.exists(built_index):
+            live_preview(built_index, project_path)
+        else:
+            st.info("No frontend build detected. Run npm install & npm run build inside the frontend folder.")
     except Exception as e:
         st.error(str(e))
 
@@ -98,7 +101,9 @@ if st.button('Run'):
             multi_file_editor(project_path)
             file_tree(project_path)
             git_controls(project_path)
-            watch_and_preview(project_path)
+            built_index = os.path.join(project_path, 'frontend', 'build', 'index.html')
+            if os.path.exists(built_index):
+                live_preview(built_index, project_path)
 
         elif mode=='Generate & Test Code':
             code = build_app(user_prompt)
@@ -117,44 +122,7 @@ if st.button('Run'):
             multi_file_editor(project_path)
             file_tree(project_path)
             git_controls(project_path)
-            watch_and_preview(project_path)
-
-
-# ----  Hot-Reload Frontend Preview ----
-def watch_and_preview(project_path):
-    """
-    Watch frontend/src for changes, rebuild React, and preview in Streamlit.
-    """
-    frontend_src = os.path.join(project_path, 'frontend', 'src')
-    frontend_build = os.path.join(project_path, 'frontend', 'build', 'index.html')
-
-    if not os.path.exists(frontend_src):
-        st.info("No frontend src folder detected. Skipping live preview.")
-        return
-
-    def watcher():
-        last_mod_time = 0
-        while True:
-            try:
-                # Get latest modification time of all files in src
-                current_mod = max(os.path.getmtime(os.path.join(dp, f))
-                                  for dp, dn, filenames in os.walk(frontend_src) for f in filenames)
-                if current_mod != last_mod_time:
-                    last_mod_time = current_mod
-                    st.info("Detected frontend change. Building React app...")
-                    # Run npm build
-                    subprocess.run(['npm', 'install'], cwd=os.path.join(project_path,'frontend'))
-                    subprocess.run(['npm', 'run', 'build'], cwd=os.path.join(project_path,'frontend'))
-                    st.success("Build complete!")
-                    if os.path.exists(frontend_build):
-                        live_preview(frontend_build)
-                time.sleep(2)
-            except Exception as e:
-                st.error(f"Error in watcher: {e}")
-                time.sleep(5)
-
-    # Run watcher in background thread
-    if 'watcher_started' not in st.session_state:
-        Thread(target=watcher, daemon=True).start()
-        st.session_state['watcher_started'] = True
+            built_index = os.path.join(project_path, 'frontend', 'build', 'index.html')
+            if os.path.exists(built_index):
+                live_preview(built_index, project_path)
 
