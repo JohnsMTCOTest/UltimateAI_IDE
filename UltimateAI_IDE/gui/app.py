@@ -1,12 +1,35 @@
 import os
-
-# Use Render-provided PORT or default to 8501 for local dev
-port = int(os.environ.get("PORT", 8501))
-
-# Set Streamlit config programmatically
 import streamlit as st
 
+# Use Render’s PORT or default for local dev
+port = int(os.environ.get("PORT", 8501))
+
+# Set Streamlit config
 st.set_page_config(page_title="UltimateAI_IDE", layout="wide")
+
+# ---- Page Header ----
+st.title("UltimateAI_IDE")
+st.markdown("**Status:** Initial deployment successful! Render app is running.")
+
+# ---- Layout: 2 Columns for Agent and Architect ----
+col1, col2 = st.columns(2)
+
+with col1:
+    st.header("Agent Workspace")
+    st.write("This is where the Agent will generate and preview code.")
+    st.text_area("Agent Output", height=300, placeholder="Agent output will appear here...")
+
+with col2:
+    st.header("Architect Workspace")
+    st.write("This is where the Architect reviews Agent code and approves or requests changes.")
+    st.text_area("Architect Feedback", height=300, placeholder="Architect feedback will appear here...")
+
+# ---- Bottom Section: Controls ----
+st.markdown("---")
+st.write("Controls Panel (for future buttons, file uploads, and other actions)")
+st.button("Run Agent")
+st.button("Approve Code")
+st.button("Request Changes")
 
 from modules.load_models import load_models
 from modules.app_builder import build_app
