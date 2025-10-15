@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: |
-      pip install -r requirements.txt
+      pip install -r UltimateAI_IDE/requirements.txt
       npm install --prefix UltimateAI_IDE/gui/frontend || echo "No frontend folder"
     startCommand: |
       streamlit run UltimateAI_IDE/gui/app.py --server.port=$PORT --server.address=0.0.0.0
