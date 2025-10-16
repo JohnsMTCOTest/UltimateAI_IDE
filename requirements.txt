@@ -1,3 +1,9 @@
-streamlit==1.50.0
-numpy
-pandas
+# Core dependencies for Streamlit app
+streamlit==1.33.0
+numpy==1.26.4
+pandas==2.2.2
+
+# Optional lightweight utilities
+pyyaml==6.0.2
+watchdog==4.0.1
+requests==2.31.0
