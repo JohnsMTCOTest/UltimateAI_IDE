@@ -1,68 +1,48 @@
-import os
 import streamlit as st
+import os
+from transformers import pipeline
 
-# -------------------------------
-# Page setup
-# -------------------------------
-st.set_page_config(page_title="UltimateAI IDE | Render Test", layout="wide")
-st.title("✅ Render Deployment Check")
-st.write("If you can see this, your Streamlit server is connected and running.")
+# --- Streamlit Page Setup ---
+st.set_page_config(page_title="UltimateAI_IDE - Hugging Face Test", layout="wide")
 
-st.markdown("---")
+st.title("🤖 UltimateAI_IDE - Render Hugging Face Test")
+st.write("If you can see this page, your Streamlit app deployed correctly on Render!")
 
-# -------------------------------
-# OpenAI API Test
-# -------------------------------
-st.header("🔮 OpenAI Text Generation Test")
+st.divider()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    st.warning("⚠️ No OpenAI API key found. Add it in Render → Environment → Key: `OPENAI_API_KEY`.")
-else:
+# --- Hugging Face Section ---
+st.header("Hugging Face Text Generation Test")
+
+@st.cache_resource
+def load_model():
+    """Load a lightweight Hugging Face model for testing."""
+    os.environ["TRANSFORMERS_CACHE"] = "/tmp/huggingface"
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=OPENAI_API_KEY)
-
-        prompt = st.text_area("Enter a prompt:", "Write a short haiku about Streamlit on Render.")
-        if st.button("Generate with OpenAI"):
-            with st.spinner("Generating..."):
-                response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=100
-                )
-                st.success("✅ Generated Text:")
-                st.write(response.choices[0].message.content)
-
+        model = pipeline("text-generation", model="sshleifer/tiny-gpt2")
+        return model
     except Exception as e:
-        st.error(f"OpenAI API error: {e}")
+        st.error(f"❌ Failed to load model: {e}")
+        return None
 
-st.markdown("---")
-
-# -------------------------------
-# Hugging Face Local Test
-# -------------------------------
-st.header("🤗 Hugging Face Local Text Generator (CPU-safe)")
-
-try:
-    from transformers import pipeline
-
-    if st.button("Load Hugging Face Model"):
-        with st.spinner("Loading model... This takes ~10s on first run."):
-            generator = pipeline("text-generation", model="distilgpt2")
-        st.session_state["generator"] = generator
+if st.button("Load Model and Generate Text"):
+    generator = load_model()
+    if generator:
         st.success("✅ Model loaded successfully!")
-
-    if "generator" in st.session_state:
-        user_prompt = st.text_area("Enter a prompt for Hugging Face model:", "Once upon a time")
-        if st.button("Run HF Model"):
+        user_prompt = st.text_input("Enter a prompt:", "Render is working")
+        if st.button("Generate"):
             with st.spinner("Generating text..."):
-                result = st.session_state["generator"](user_prompt, max_length=60, num_return_sequences=1)
-                st.success("✅ Generated Text:")
-                st.write(result[0]["generated_text"])
-except Exception as e:
-    st.error(f"Hugging Face error: {e}")
+                try:
+                    result = generator(user_prompt, max_new_tokens=40)
+                    st.write("**Generated Text:**")
+                    st.success(result[0]["generated_text"])
+                except Exception as e:
+                    st.error(f"❌ Error generating text: {e}")
+    else:
+        st.warning("Model not loaded yet. Please try again.")
 
-st.markdown("---")
-st.caption("🚀 UltimateAI IDE | Render environment validation complete.")
+st.divider()
+
+# --- Footer ---
+st.caption("© 2025 UltimateAI_IDE • Streamlit + Hugging Face Demo")
+
 
