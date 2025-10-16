@@ -1,0 +1,6 @@
+streamlit==1.50.0
+numpy
+pandas
+torch
+transformers
+streamlit-sortables
