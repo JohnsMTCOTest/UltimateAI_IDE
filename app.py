@@ -100,7 +100,8 @@ with tab1:
 with tab2:
     st.subheader("🧪 Console Output")
     def run_file(path: Path, timeout=20):
-        cmd = f"python -u {shlex.quote(str(path))}"
+        rel_path = path.relative_to(WORKSPACE)
+        cmd = f"python -u {shlex.quote(str(rel_path))}"
         try:
             proc = subprocess.run(
                 cmd, shell=True, cwd=str(WORKSPACE),
@@ -147,4 +148,3 @@ cpu = psutil.cpu_percent(interval=0.2)
 ram = psutil.virtual_memory().percent
 st.sidebar.markdown("---")
 st.sidebar.write(f"CPU: {cpu}% | RAM: {ram}%")
-
