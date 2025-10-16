@@ -177,7 +177,7 @@ if st.button("✨ Generate with Agent"):
                 max_tokens=1300,
                 temperature=0.35,
             )
-            for event in stream:
+            for event in stream.iter_events():
                 if event.type == "message.delta" and event.delta.content:
                     generated += event.delta.content
                     agent_box.code(generated, language="python")
@@ -246,4 +246,5 @@ term_box.code(st.session_state.terminal_history or "(Terminal idle…)", languag
 
 st.markdown("---")
 st.caption("Replit-Style IDE • Agent → Architect → Auto-Fix → Run • Dark Theme")
+
 
