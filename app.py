@@ -18,32 +18,32 @@ DEFAULT_FILE.touch(exist_ok=True)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # =========================
-# SIDEBAR
+# SIDEBAR: FILES + SYSTEM
 # =========================
 st.sidebar.title("📁 Project Files")
 
-def list_files(root):
+def list_files(root: Path):
     return sorted([p for p in root.rglob("*") if p.is_file()])
 
 def select_file_ui():
     files = list_files(WORKSPACE)
     rel_paths = [str(p.relative_to(WORKSPACE)) for p in files] or ["(no files)"]
-    selected = st.sidebar.selectbox("Select file", rel_paths)
+    selected = st.sidebar.selectbox("Select file", rel_paths, index=0)
     return WORKSPACE / selected if selected != "(no files)" else None
 
 current_file = select_file_ui()
 
 with st.sidebar.expander("➕ Create / Delete"):
     new_path = st.text_input("New path", value="new_file.py")
-    col1, col2 = st.columns(2)
-    with col1:
+    c1, c2 = st.columns(2)
+    with c1:
         if st.button("Create File"):
             p = WORKSPACE / new_path
             p.parent.mkdir(parents=True, exist_ok=True)
             p.touch(exist_ok=True)
             st.success(f"Created {p}")
             st.rerun()
-    with col2:
+    with c2:
         if st.button("Delete"):
             p = WORKSPACE / new_path
             if p.exists():
@@ -57,202 +57,221 @@ ram = psutil.virtual_memory().percent
 st.sidebar.write(f"CPU: {cpu}% | RAM: {ram}%")
 
 # =========================
-# TOP BAR
+# HEADER
 # =========================
-col_a, col_b = st.columns([3, 1])
-with col_a:
-    st.title("🧠 UltimateAI IDE (OpenAI Edition)")
-with col_b:
-    st.caption("Replit-style workspace")
+st.title("🧠 UltimateAI IDE — Replit-style Flow")
+st.caption("Agent → (auto) Architect Review → Console → Terminal")
 
 # =========================
-# MAIN LAYOUT
+# EDITOR (Reference view)
 # =========================
-col_editor, col_console = st.columns([2, 1.2])
+st.markdown("## 💻 Code Editor (current file)")
+try:
+    from streamlit_ace import st_ace
+    code = current_file.read_text() if current_file else ""
+    edited = st_ace(
+        value=code,
+        language="python",
+        theme="twilight",
+        min_lines=18,
+        key="ace_editor",
+    )
+except Exception:
+    edited = st.text_area(
+        "Code",
+        value=current_file.read_text() if current_file else "",
+        height=320,
+    )
 
-# ---- Editor ----
-with col_editor:
-    st.subheader("💻 Code Editor")
-
-    try:
-        from streamlit_ace import st_ace
-        code = current_file.read_text() if current_file else ""
-        content = st_ace(
-            value=code,
-            language="python",
-            theme="twilight",
-            min_lines=20,
-            key="ace_editor",
-        )
-    except Exception:
-        content = st.text_area("Code", value=current_file.read_text() if current_file else "", height=400)
-
+cols_save = st.columns([1, 3])
+with cols_save[0]:
     if st.button("💾 Save"):
         if current_file:
-            current_file.write_text(content)
+            current_file.write_text(edited)
             st.success(f"Saved {current_file.name}")
 
-# ---- Console ----
-with col_console:
-    st.subheader("🧪 Console")
-    console = st.empty()
+# =========================
+# REPLIT-STYLE VERTICAL FLOW
+# =========================
+st.markdown("---")
+st.header("🤖 Agent (chat-to-build)")
 
-    def run_file(path: Path, timeout=15):
-        if not path.suffix == ".py":
-            return f"Cannot run non-Python file: {path}"
-        cmd = f"python -u {shlex.quote(str(path))}"
+# Agent inputs
+prompt = st.text_area("Describe what to build or change", height=140, placeholder="e.g., Add a FastAPI server with /health and /items endpoints…")
+target_file = st.text_input("Target file (relative to workspace/)", value=str(current_file.relative_to(WORKSPACE)) if current_file else "main.py")
+stream_mode = st.checkbox("⚡ Stream generation live", value=True)
+auto_run = st.checkbox("🚀 Auto-run after generation (if .py)", value=True)
+
+# Placeholders for Agent output, Architect review, and Console run
+agent_out_box = st.empty()
+review_box = st.empty()
+run_box = st.empty()
+
+def run_file(path: Path, timeout=20) -> str:
+    if path.suffix != ".py":
+        return f"Cannot run non-Python file: {path}"
+    cmd = f"python -u {shlex.quote(str(path))}"
+    try:
+        proc = subprocess.run(
+            cmd, shell=True, cwd=str(WORKSPACE),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=timeout, text=True
+        )
+        return f"$ {cmd}\n\n{proc.stdout}{proc.stderr}\nExit code: {proc.returncode}"
+    except subprocess.TimeoutExpired:
+        return f"$ {cmd}\n\n❌ Timed out after {timeout}s."
+
+def architect_review(code_text: str) -> str:
+    """Call the Architect to review generated code."""
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are the Architect: a senior reviewer. "
+                    "Provide concise findings: correctness, security, edge cases, performance, "
+                    "naming/structure, and a short prioritized fix list. Use markdown bullets."
+                ),
+            },
+            {"role": "user", "content": f"Review this code:\n\n{code_text}"},
+        ],
+        max_tokens=900,
+        temperature=0.2,
+    )
+    return resp.choices[0].message.content
+
+# Generate button: Agent → save file → Architect review → (optional) run
+if st.button("✨ Generate with Agent"):
+    if not os.getenv("OPENAI_API_KEY"):
+        st.error("Missing OPENAI_API_KEY environment variable.")
+    elif not prompt.strip():
+        st.warning("Enter a description for the Agent.")
+    else:
+        dest = WORKSPACE / target_file
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        st.info("Agent is generating code…")
+        generated = ""
+
         try:
-            proc = subprocess.run(
-                cmd, shell=True, cwd=str(WORKSPACE),
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                timeout=timeout, text=True
-            )
-            return f"$ {cmd}\n\n{proc.stdout}\n{proc.stderr}\nExit code: {proc.returncode}"
-        except subprocess.TimeoutExpired:
-            return f"$ {cmd}\n\n❌ Timed out after {timeout}s."
-
-    if st.button("▶️ Run"):
-        if current_file:
-            out = run_file(current_file)
-            console.code(out, language="bash")
-
-# =========================
-# AGENT / ARCHITECT
-# =========================
-st.markdown("---")
-st.subheader("🤖 Agent & 🛠️ Architect")
-
-col1, col2 = st.columns(2)
-
-# ---- AGENT ----
-with col1:
-    st.markdown("### 🤖 Agent (Generate Code)")
-    prompt = st.text_area("Describe what to build", height=120)
-    target_file = st.text_input("Target file", value=str(current_file.relative_to(WORKSPACE)) if current_file else "main.py")
-    stream_mode = st.checkbox("⚡ Stream output live", value=True)
-    auto_run = st.checkbox("🚀 Auto-Run after generation", value=True)
-
-    if st.button("✨ Generate"):
-        if not os.getenv("OPENAI_API_KEY"):
-            st.error("Missing OPENAI_API_KEY environment variable.")
-        elif not prompt.strip():
-            st.warning("Enter a description.")
-        else:
-            dest = WORKSPACE / target_file
-            st.info("Generating code...")
-            try:
-                output = ""
-                if stream_mode:
-                    response_stream = client.chat.completions.stream(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {"role": "system", "content": "You are an expert code generator. Write clean, complete code only."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        max_tokens=1000,
-                        temperature=0.4,
-                    )
-                    placeholder = st.empty()
-                    for event in response_stream:
-                        if event.type == "message.delta" and event.delta.content:
-                            output += event.delta.content
-                            placeholder.code(output, language="python")
-                    dest.write_text(output)
-                else:
-                    resp = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {"role": "system", "content": "You are an expert code generator. Return only code."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        max_tokens=1000,
-                        temperature=0.4,
-                    )
-                    output = resp.choices[0].message.content
-                    dest.write_text(output)
-                    st.code(output, language="python")
-
-                st.success(f"✅ Code saved to {dest}")
-
-                # Auto-Run new code
-                if auto_run and dest.suffix == ".py":
-                    st.info("🚀 Running newly generated code...")
-                    run_output = run_file(dest)
-                    console.code(run_output, language="bash")
-
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-# ---- ARCHITECT ----
-with col2:
-    st.markdown("### 🛠️ Architect (Review Code)")
-    review_file = st.text_input("File to review", value=str(current_file.relative_to(WORKSPACE)) if current_file else "main.py")
-
-    if st.button("🔍 Review"):
-        if not os.getenv("OPENAI_API_KEY"):
-            st.error("Missing OPENAI_API_KEY.")
-        else:
-            path = WORKSPACE / review_file
-            if not path.exists():
-                st.error("File not found.")
+            if stream_mode:
+                stream = client.chat.completions.stream(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are the Agent: write clean, complete code only. "
+                                "No explanations, no backticks. If multiple files are needed, write the main target file only."
+                            ),
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=1300,
+                    temperature=0.35,
+                )
+                live = st.empty()
+                for event in stream:
+                    if event.type == "message.delta" and event.delta.content:
+                        generated += event.delta.content
+                        # Show the streaming code output
+                        live.code(generated, language="python")
             else:
-                code_text = path.read_text()
-                st.info("Reviewing...")
-                try:
-                    resp = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {"role": "system", "content": "You are a senior software architect reviewing Python code for quality, security, and clarity."},
-                            {"role": "user", "content": f"Review this code:\n\n{code_text}"},
-                        ],
-                        max_tokens=800,
-                        temperature=0.3,
-                    )
-                    review = resp.choices[0].message.content
-                    st.markdown("#### 🧾 Review Feedback")
-                    st.write(review)
-                except Exception as e:
-                    st.error(f"Review failed: {e}")
+                resp = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are the Agent: return ONLY code for the requested change."
+                            ),
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=1300,
+                    temperature=0.35,
+                )
+                generated = resp.choices[0].message.content
+                agent_out_box.code(generated, language="python")
+
+            # Save code produced by Agent
+            dest.write_text(generated)
+            st.success(f"✅ Agent saved to {dest.relative_to(WORKSPACE)}")
+
+            # Show final generated code block (even if we streamed)
+            agent_out_box.code(generated, language="python")
+
+            # Architect auto-review
+            st.info("🏗️ Calling Architect for automatic review…")
+            try:
+                review_text = architect_review(generated)
+                review_box.markdown("### 🧾 Architect Review")
+                review_box.write(review_text)
+            except Exception as e:
+                review_box.error(f"Architect review failed: {e}")
+
+            # Optional auto-run
+            if auto_run and dest.suffix == ".py":
+                st.info("🚀 Running generated code…")
+                run_output = run_file(dest)
+                run_box.markdown("### 🧪 Console Output")
+                run_box.code(run_output, language="bash")
+
+        except Exception as e:
+            st.error(f"Agent error: {e}")
 
 # =========================
-# TERMINAL (NEW)
+# MANUAL CONSOLE (Run Selected File)
 # =========================
 st.markdown("---")
-st.subheader("💻 Replit-Style Terminal")
+st.header("🧪 Console (Run current file)")
+
+console_col1, console_col2 = st.columns([1, 3])
+with console_col1:
+    run_now = st.button("▶️ Run Selected File")
+with console_col2:
+    console_output = st.empty()
+
+if run_now and current_file:
+    console_output.code(run_file(current_file), language="bash")
+
+# =========================
+# TERMINAL (Interactive, persistent)
+# =========================
+st.markdown("---")
+st.header("💻 Terminal")
 
 if "terminal_history" not in st.session_state:
     st.session_state.terminal_history = ""
 
-command = st.text_input("Enter shell command", placeholder="e.g., pip list, ls, python main.py")
+cmd = st.text_input("Enter shell command (runs in workspace/)", placeholder="e.g., ls -la, pip list, python main.py")
 
-col_run, col_clear = st.columns([1, 1])
-with col_run:
-    run = st.button("▶️ Run Command")
-with col_clear:
+t1, t2 = st.columns([1, 1])
+with t1:
+    run_cmd = st.button("▶️ Run Command")
+with t2:
     if st.button("🧹 Clear Terminal"):
         st.session_state.terminal_history = ""
         st.experimental_rerun()
 
-output_box = st.empty()
+term_box = st.empty()
 
-if run and command.strip():
+if run_cmd and cmd.strip():
     try:
         process = subprocess.Popen(
-            command, shell=True, cwd=str(WORKSPACE),
+            cmd, shell=True, cwd=str(WORKSPACE),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
-        live_output = ""
         for line in process.stdout:
-            live_output += line
             st.session_state.terminal_history += line
-            output_box.code(st.session_state.terminal_history, language="bash")
+            term_box.code(st.session_state.terminal_history, language="bash")
         process.wait()
     except Exception as e:
         st.session_state.terminal_history += f"\n⚠️ Error: {e}\n"
-        output_box.code(st.session_state.terminal_history, language="bash")
+        term_box.code(st.session_state.terminal_history, language="bash")
 
-# Always show the latest terminal history
-output_box.code(st.session_state.terminal_history or "(Terminal idle...)", language="bash")
+term_box.code(st.session_state.terminal_history or "(Terminal idle…)", language="bash")
 
 st.markdown("---")
-st.caption("Streamlit • Replit-style IDE • Terminal • Auto-Run • OpenAI Streaming")
+st.caption("Replit-style vertical flow • Agent → Architect → Console → Terminal • OpenAI Streaming")
