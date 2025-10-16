@@ -1,13 +1,9 @@
 streamlit==1.33.0
-numpy==1.26.4
 pandas==2.2.3
 requests==2.31.0
 pyyaml==6.0.2
 watchdog==4.0.1
-torch==2.3.0
-transformers==4.40.2
-accelerate==0.29.3
+huggingface-hub==0.23.5
 python-dotenv==1.0.1
 openai==1.12.0
-
 
