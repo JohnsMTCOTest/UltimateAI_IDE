@@ -5,7 +5,6 @@ import subprocess
 import streamlit as st
 from pathlib import Path
 from openai import OpenAI
-from difflib import unified_diff
 import importlib.metadata
 
 # =========================
@@ -19,13 +18,10 @@ DEFAULT_FILE.touch(exist_ok=True)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Detect OpenAI SDK version
 try:
     openai_version = importlib.metadata.version("openai")
 except importlib.metadata.PackageNotFoundError:
     openai_version = "0.0.0"
-
-use_new_sdk = openai_version >= "1.0.0"
 
 # =========================
 # SIDEBAR
@@ -133,7 +129,7 @@ def apply_fixes_with_agent(code_text: str, review_text: str) -> str:
 # HEADER
 # =========================
 st.title("🧠 UltimateAI IDE — Replit-Style Autonomous Flow")
-st.caption("Agent → Architect → Auto-Fix → Run (Auto SDK Detection)")
+st.caption("Agent → Architect → Auto-Fix → Run • Universal SDK-Compatible")
 
 # =========================
 # EDITOR (Reference)
@@ -172,33 +168,43 @@ if st.button("✨ Generate with Agent"):
         st.warning("Enter a description.")
     else:
         dest = WORKSPACE / target_file
-        st.info(f"🚧 Generating code with Agent... (using OpenAI SDK v{openai_version})")
+        st.info(f"🚧 Generating code with Agent... (OpenAI v{openai_version})")
         generated = ""
 
         try:
             # ---- AGENT PHASE ----
-            stream = client.chat.completions.stream(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are the Agent. Write full, clean, self-contained code only."},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=1300,
-                temperature=0.35,
-            )
+            try:
+                stream = client.chat.completions.stream(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are the Agent. Write full, clean, self-contained code only."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=1300,
+                    temperature=0.35,
+                )
 
-            if use_new_sdk:
-                # For new SDK (>=1.0.0)
-                for event in stream.iter_events():
-                    if event.type == "message.delta" and event.delta.content:
-                        generated += event.delta.content
+                # UNIVERSAL STREAMING: works for all SDKs
+                iterator = getattr(stream, "iter_events", lambda: stream)()
+                for event in iterator:
+                    delta = getattr(event, "delta", None)
+                    if delta and getattr(delta, "content", None):
+                        generated += delta.content
                         agent_box.code(generated, language="python")
-            else:
-                # For old SDK (<1.0.0)
-                for event in stream:
-                    if hasattr(event, "delta") and getattr(event.delta, "content", None):
-                        generated += event.delta.content
-                        agent_box.code(generated, language="python")
+
+            except Exception as stream_error:
+                st.warning(f"⚠️ Streaming failed ({stream_error}); switching to non-streaming mode.")
+                resp = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are the Agent. Return complete Python code only."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=1300,
+                    temperature=0.35,
+                )
+                generated = resp.choices[0].message.content
+                agent_box.code(generated, language="python")
 
             dest.write_text(generated)
             st.success(f"✅ Code generated and saved to {dest}")
@@ -262,4 +268,5 @@ if run_cmd and cmd.strip():
 term_box.code(st.session_state.terminal_history or "(Terminal idle…)", language="bash")
 
 st.markdown("---")
-st.caption("Replit-Style IDE • Agent → Architect → Auto-Fix → Run • Dual SDK Compatible • Dark Theme")
+st.caption("Replit-Style IDE • Agent → Architect → Auto-Fix → Run • Universal Streaming Fix • Dark Theme")
+
