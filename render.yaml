@@ -1,1 +1,53 @@
+# ==========================================
+# 🚀 UltimateAI IDE — Render Deployment (Root-Level)
+# ==========================================
+services:
+  # ===============================
+  # 🌍 Web App (Streamlit Frontend)
+  # ===============================
+  - type: web
+    name: ultimateai-ide
+    env: python
+    plan: free
+    autoDeploy: true
+
+    buildCommand: |
+      echo "🚀 Upgrading pip..."
+      pip install --upgrade pip
+
+      echo "📦 Installing dependencies..."
+      pip install -r requirements.txt
+
+      echo "✅ Build complete."
+
+    startCommand: |
+      echo "🌍 Launching UltimateAI IDE..."
+      streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.4
+      - key: OPENAI_API_KEY
+        sync: false
+
+  # ===============================
+  # ⚙️ Background Worker (Optional)
+  # ===============================
+  - type: worker
+    name: ultimateai-ide-worker
+    env: python
+    plan: free
+    autoDeploy: true
+    buildCommand: |
+      echo "🚀 Installing worker dependencies..."
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: |
+      echo "⚙️ Background worker running (for queued jobs or training loops)..."
+      python worker.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.4
+      - key: OPENAI_API_KEY
+        sync: false
 
