@@ -8,14 +8,18 @@ from openai import OpenAI
 import importlib.metadata
 
 # =========================
-# CONFIG
+# CONFIG — Render-Safe
 # =========================
 st.set_page_config(page_title="UltimateAI IDE", layout="wide")
+
+# --- Always create workspace on startup ---
 WORKSPACE = Path("workspace")
-WORKSPACE.mkdir(exist_ok=True)
+WORKSPACE.mkdir(parents=True, exist_ok=True)
 DEFAULT_FILE = WORKSPACE / "main.py"
+DEFAULT_FILE.parent.mkdir(parents=True, exist_ok=True)
 DEFAULT_FILE.touch(exist_ok=True)
 
+# --- OpenAI client ---
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 try:
@@ -66,6 +70,7 @@ st.sidebar.write(f"CPU: {cpu}% | RAM: {ram}%")
 # UTILITIES
 # =========================
 def run_file(path: Path, timeout=25):
+    """Run a Python file inside workspace and capture output."""
     cmd = f"python -u {shlex.quote(str(path))}"
     try:
         proc = subprocess.run(
@@ -113,8 +118,8 @@ def apply_fixes_with_agent(code_text: str, review_text: str) -> str:
 # =========================
 # HEADER
 # =========================
-st.title("🧠 UltimateAI IDE — Replit-Style Split View")
-st.caption("Agent (left) • Console (right) • Editor & Terminal as Tabs")
+st.title("🧠 UltimateAI IDE — Replit-Style Split (Render-Ready)")
+st.caption("Agent ↔ Console • Editor & Terminal Tabs • Auto workspace folder")
 
 # =========================
 # MAIN TAB STRUCTURE
@@ -124,7 +129,7 @@ tab_main, tab_editor, tab_terminal = st.tabs(
 )
 
 # ---------------------------------------------------------
-# TAB 1 — AGENT + CONSOLE SIDE BY SIDE
+# TAB 1 — AGENT + CONSOLE
 # ---------------------------------------------------------
 with tab_main:
     left, right = st.columns([1.4, 1])
@@ -132,7 +137,9 @@ with tab_main:
     with left:
         st.subheader("🤖 AI Agent (Chat-to-Build)")
         prompt = st.text_area("Describe what to build or modify:", height=140)
-        target_file = st.text_input("Target file:", value=str(current_file.relative_to(WORKSPACE)) if current_file else "main.py")
+        target_file = st.text_input(
+            "Target file:", value=str(current_file.relative_to(WORKSPACE)) if current_file else "main.py"
+        )
 
         agent_box = st.empty()
         review_box = st.empty()
@@ -160,15 +167,16 @@ with tab_main:
                             max_tokens=1300,
                             temperature=0.35,
                         )
-                        iterator = getattr(stream, "iter_events", lambda: stream)()
-                        for event in iterator:
+
+                        # universal stream iterator
+                        for event in getattr(stream, "iter_events", lambda: stream)():
                             delta = getattr(event, "delta", None)
                             if delta and getattr(delta, "content", None):
                                 generated += delta.content
                                 agent_box.code(generated, language="python")
 
                     except Exception as stream_error:
-                        st.warning(f"⚠️ Streaming failed ({stream_error}); switching to non-streaming mode.")
+                        # fallback non-streaming
                         resp = client.chat.completions.create(
                             model="gpt-4o-mini",
                             messages=[
@@ -197,7 +205,7 @@ with tab_main:
                     dest.write_text(fixed_code)
                     fix_box.success("✅ Auto-fixed file saved.")
 
-                    # trigger run output on the right side
+                    # mark for console run
                     st.session_state["last_run_file"] = str(dest)
 
                 except Exception as e:
@@ -273,5 +281,6 @@ with tab_terminal:
     term_box.code(st.session_state.terminal_history or "(Terminal idle…)", language="bash")
 
 st.markdown("---")
-st.caption("Replit-Style IDE • Agent ↔ Console Split • Editor & Terminal Tabs • Dark Theme")
+st.caption("Render-Ready • Auto-workspace • Live Agent + Console • Editor & Terminal Tabs • Dark Theme")
+
 
