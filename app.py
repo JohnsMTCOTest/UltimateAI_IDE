@@ -1,6 +1,8 @@
 import os
 import subprocess
 import shlex
+import threading
+import time
 from pathlib import Path
 
 import psutil
@@ -99,32 +101,38 @@ with tab1:
 # ---- Console Runner ----
 with tab2:
     st.subheader("🧪 Console Output")
-    def run_file(path: Path, timeout=20):
+    console = st.empty()
+    log_lines = []
+    flask_process = None
+
+    def run_flask_app(path: Path):
+        global flask_process
         rel_path = path.relative_to(WORKSPACE)
         cmd = f"python -u {shlex.quote(str(rel_path))}"
-        try:
-            proc = subprocess.run(
-                cmd, shell=True, cwd=str(WORKSPACE),
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                timeout=timeout, text=True
-            )
-            return f"$ {cmd}\n\n{proc.stdout}\n{proc.stderr}\nExit code: {proc.returncode}"
-        except subprocess.TimeoutExpired:
-            return f"$ {cmd}\n\n❌ Timed out after {timeout}s."
+        flask_process = subprocess.Popen(
+            cmd,
+            shell=True,
+            cwd=str(WORKSPACE),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+        for line in flask_process.stdout:
+            log_lines.append(line)
+            console.code("".join(log_lines), language="bash")
 
-    if st.button("▶️ Run File"):
+    if st.button("▶️ Run Flask App"):
         if current_file and current_file.suffix == ".py":
-            st.code(run_file(current_file), language="bash")
+            threading.Thread(target=run_flask_app, args=(current_file,), daemon=True).start()
         else:
             st.warning("Select a .py file to run.")
 
 # ---- Live Preview ----
 with tab3:
     st.subheader("🌐 Live Web Preview")
-    st.markdown("This section assumes you're running a Flask app on Render.")
-    st.info("👉 When deployed, you can embed your Render web URL here using an iframe.")
-    st.code("https://your-render-url.onrender.com", language="text")
-    # st.components.v1.iframe("https://your-render-url.onrender.com", height=500)
+    st.markdown("Below is an iframe preview of the Flask app (Render deployments only).")
+    preview_url = os.getenv("PREVIEW_URL", "https://your-render-url.onrender.com")
+    st.components.v1.iframe(preview_url, height=500)
 
 # =========================
 # COMMENTED OUT: AGENT SECTION
@@ -148,3 +156,4 @@ cpu = psutil.cpu_percent(interval=0.2)
 ram = psutil.virtual_memory().percent
 st.sidebar.markdown("---")
 st.sidebar.write(f"CPU: {cpu}% | RAM: {ram}%")
+
