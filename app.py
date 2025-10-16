@@ -1,38 +1,31 @@
+# UltimateAI IDE — Replit-Style with Smart Agent + Console + Web Preview
+
 import os
-import psutil
 import shlex
 import subprocess
-import streamlit as st
+import socket
 from pathlib import Path
+import streamlit as st
+import psutil
 from openai import OpenAI
-import importlib.metadata
 
 # =========================
-# CONFIG — Render-Safe
+# CONFIG + SETUP
 # =========================
-st.set_page_config(page_title="UltimateAI IDE", layout="wide")
-
-# --- Always create workspace on startup ---
+st.set_page_config(page_title="UltimateAI IDE (Replit-style)", layout="wide")
 WORKSPACE = Path("workspace")
-WORKSPACE.mkdir(parents=True, exist_ok=True)
+WORKSPACE.mkdir(exist_ok=True)
 DEFAULT_FILE = WORKSPACE / "main.py"
-DEFAULT_FILE.parent.mkdir(parents=True, exist_ok=True)
 DEFAULT_FILE.touch(exist_ok=True)
 
-# --- OpenAI client ---
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-try:
-    openai_version = importlib.metadata.version("openai")
-except importlib.metadata.PackageNotFoundError:
-    openai_version = "0.0.0"
-
 # =========================
-# SIDEBAR
+# SIDEBAR: Files + Metrics
 # =========================
 st.sidebar.title("📁 Project Files")
 
-def list_files(root: Path):
+def list_files(root):
     return sorted([p for p in root.rglob("*") if p.is_file()])
 
 def select_file_ui():
@@ -45,15 +38,15 @@ current_file = select_file_ui()
 
 with st.sidebar.expander("➕ Create / Delete"):
     new_path = st.text_input("New path", value="new_file.py")
-    c1, c2 = st.columns(2)
-    with c1:
+    col1, col2 = st.columns(2)
+    with col1:
         if st.button("Create File"):
             p = WORKSPACE / new_path
             p.parent.mkdir(parents=True, exist_ok=True)
             p.touch(exist_ok=True)
             st.success(f"Created {p}")
             st.rerun()
-    with c2:
+    with col2:
         if st.button("Delete"):
             p = WORKSPACE / new_path
             if p.exists():
@@ -61,226 +54,133 @@ with st.sidebar.expander("➕ Create / Delete"):
                 st.success("Deleted!")
                 st.rerun()
 
-st.sidebar.markdown("---")
 cpu = psutil.cpu_percent(interval=0.2)
 ram = psutil.virtual_memory().percent
+st.sidebar.markdown("---")
 st.sidebar.write(f"CPU: {cpu}% | RAM: {ram}%")
 
 # =========================
-# UTILITIES
+# MAIN UI LAYOUT
 # =========================
-def run_file(path: Path, timeout=25):
-    """Run a Python file inside workspace and capture output."""
-    cmd = f"python -u {shlex.quote(str(path))}"
-    try:
-        proc = subprocess.run(
-            cmd, shell=True, cwd=str(WORKSPACE),
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            timeout=timeout, text=True
-        )
-        return f"$ {cmd}\n\n{proc.stdout}{proc.stderr}\nExit code: {proc.returncode}"
-    except subprocess.TimeoutExpired:
-        return f"$ {cmd}\n\n❌ Timed out after {timeout}s."
-
-def show_split_diff(before: str, after: str):
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("#### 🧩 Before (Agent Output)")
-        st.code(before, language="python")
-    with col2:
-        st.markdown("#### ⚙️ After (Auto-Fixed by Architect)")
-        st.code(after, language="python")
-
-def architect_review(code_text: str) -> str:
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are the Architect. Review Python code for quality and clarity."},
-            {"role": "user", "content": f"Review this code:\n\n{code_text}"},
-        ],
-        max_tokens=900,
-        temperature=0.25,
-    )
-    return resp.choices[0].message.content
-
-def apply_fixes_with_agent(code_text: str, review_text: str) -> str:
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are the Agent. Apply all suggested fixes and return corrected code."},
-            {"role": "user", "content": f"Architect Review:\n{review_text}\n\nOriginal Code:\n{code_text}"},
-        ],
-        max_tokens=1300,
-        temperature=0.35,
-    )
-    return resp.choices[0].message.content
+st.title("🧠 UltimateAI IDE (Replit-style)")
+col_agent, col_console = st.columns([1.8, 1.2])
 
 # =========================
-# HEADER
+# LEFT: Agent
 # =========================
-st.title("🧠 UltimateAI IDE — Replit-Style Split (Render-Ready)")
-st.caption("Agent ↔ Console • Editor & Terminal Tabs • Auto workspace folder")
+with col_agent:
+    st.subheader("🤖 AI Agent (Generate Code)")
+    prompt = st.text_area("Describe what to build", height=120)
+    target_file = st.text_input("Target file", value="main.py")
+    stream_mode = st.checkbox("⚡ Stream output live", value=True)
+    auto_run = st.checkbox("🚀 Auto-Run after generation", value=True)
+
+    if st.button("✨ Generate"):
+        dest = WORKSPACE / target_file
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        if not os.getenv("OPENAI_API_KEY"):
+            st.error("Missing OPENAI_API_KEY.")
+        elif not prompt.strip():
+            st.warning("Please enter a prompt.")
+        else:
+            st.info("Generating code...")
+            output = ""
+            try:
+                if stream_mode:
+                    stream = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {"role": "system", "content": "You are an expert developer. Output clean, working code only."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        stream=True,
+                        max_tokens=1000,
+                        temperature=0.5,
+                    )
+                    placeholder = st.empty()
+                    for chunk in stream:
+                        delta = chunk.choices[0].delta
+                        if delta.content:
+                            output += delta.content
+                            placeholder.code(output, language="python")
+                else:
+                    resp = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {"role": "system", "content": "You are an expert developer."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        max_tokens=1000,
+                        temperature=0.4,
+                    )
+                    output = resp.choices[0].message.content
+                    st.code(output, language="python")
+
+                dest.write_text(output)
+                st.success(f"✅ Saved to {dest.relative_to(WORKSPACE)}")
+
+                if auto_run and dest.suffix == ".py":
+                    st.info("Auto-running...")
+                    st.session_state.run_target = dest
+
+            except Exception as e:
+                st.error(f"Generation failed: {e}")
 
 # =========================
-# MAIN TAB STRUCTURE
+# RIGHT: Console
 # =========================
-tab_main, tab_editor, tab_terminal = st.tabs(
-    ["🧠 Agent + Console", "💻 Editor", "💬 Terminal"]
-)
+with col_console:
+    st.subheader("🧪 Console")
+    console = st.empty()
 
-# ---------------------------------------------------------
-# TAB 1 — AGENT + CONSOLE
-# ---------------------------------------------------------
-with tab_main:
-    left, right = st.columns([1.4, 1])
+    def run_file(path: Path, timeout=15):
+        if not path.exists():
+            return f"❌ File not found: {path}"
+        if path.suffix != ".py":
+            return f"❌ Cannot run non-Python file: {path.name}"
+        cmd = f"python -u {shlex.quote(str(path))}"
+        try:
+            proc = subprocess.run(
+                cmd, shell=True, cwd=str(WORKSPACE),
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=timeout, text=True
+            )
+            return f"$ {cmd}\n\n{proc.stdout}{proc.stderr}\nExit code: {proc.returncode}"
+        except subprocess.TimeoutExpired:
+            return f"❌ Timed out after {timeout}s."
 
-    with left:
-        st.subheader("🤖 AI Agent (Chat-to-Build)")
-        prompt = st.text_area("Describe what to build or modify:", height=140)
-        target_file = st.text_input(
-            "Target file:", value=str(current_file.relative_to(WORKSPACE)) if current_file else "main.py"
-        )
+    run_path = st.session_state.get("run_target", DEFAULT_FILE)
 
-        agent_box = st.empty()
-        review_box = st.empty()
-        fix_box = st.empty()
+    if st.button("▶️ Run"):
+        out = run_file(run_path)
+        console.code(out, language="bash")
 
-        if st.button("✨ Generate with Agent", key="agent_generate"):
-            if not os.getenv("OPENAI_API_KEY"):
-                st.error("Missing OPENAI_API_KEY.")
-            elif not prompt.strip():
-                st.warning("Enter a description.")
-            else:
-                dest = WORKSPACE / target_file
-                st.info(f"🚧 Generating code with Agent... (OpenAI v{openai_version})")
-                generated = ""
+        if "Flask" in out or "Running on http://" in out:
+            hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME") or socket.gethostname()
+            st.success("🌐 Flask app likely running.")
+            st.markdown(f"**Open in browser:** [https://{hostname}](https://{hostname})")
 
-                try:
-                    # ---- AGENT PHASE ----
-                    try:
-                        stream = client.chat.completions.stream(
-                            model="gpt-4o-mini",
-                            messages=[
-                                {"role": "system", "content": "You are the Agent. Write full, clean, self-contained code only."},
-                                {"role": "user", "content": prompt},
-                            ],
-                            max_tokens=1300,
-                            temperature=0.35,
-                        )
-
-                        # universal stream iterator
-                        for event in getattr(stream, "iter_events", lambda: stream)():
-                            delta = getattr(event, "delta", None)
-                            if delta and getattr(delta, "content", None):
-                                generated += delta.content
-                                agent_box.code(generated, language="python")
-
-                    except Exception as stream_error:
-                        # fallback non-streaming
-                        resp = client.chat.completions.create(
-                            model="gpt-4o-mini",
-                            messages=[
-                                {"role": "system", "content": "You are the Agent. Return complete Python code only."},
-                                {"role": "user", "content": prompt},
-                            ],
-                            max_tokens=1300,
-                            temperature=0.35,
-                        )
-                        generated = resp.choices[0].message.content
-                        agent_box.code(generated, language="python")
-
-                    dest.write_text(generated)
-                    st.success(f"✅ Code generated and saved to {dest}")
-
-                    # ---- ARCHITECT PHASE ----
-                    st.info("🏗️ Architect reviewing generated code...")
-                    review_text = architect_review(generated)
-                    review_box.markdown("### 🧾 Architect Review")
-                    review_box.write(review_text)
-
-                    # ---- AUTO-FIX PHASE ----
-                    st.info("🤝 Applying Architect’s fixes automatically...")
-                    fixed_code = apply_fixes_with_agent(generated, review_text)
-                    show_split_diff(generated, fixed_code)
-                    dest.write_text(fixed_code)
-                    fix_box.success("✅ Auto-fixed file saved.")
-
-                    # mark for console run
-                    st.session_state["last_run_file"] = str(dest)
-
-                except Exception as e:
-                    st.error(f"Process failed: {e}")
-
-    with right:
-        st.subheader("🧪 Console Output")
-        if "last_run_file" not in st.session_state:
-            st.session_state["last_run_file"] = None
-
-        run_button = st.button("▶️ Run Latest Build", key="run_latest")
-        run_box = st.empty()
-
-        if run_button and st.session_state["last_run_file"]:
-            dest = Path(st.session_state["last_run_file"])
-            run_output = run_file(dest)
-            if not run_output.strip():
-                run_box.warning("⚠️ No output captured from script.")
-            else:
-                run_box.code(run_output, language="bash")
-
-# ---------------------------------------------------------
-# TAB 2 — EDITOR
-# ---------------------------------------------------------
-with tab_editor:
-    st.header("💻 Code Editor")
+# =========================
+# Optional: File Editor Below
+# =========================
+with st.expander("📝 Code Editor (View/Edit Any File)"):
     try:
         from streamlit_ace import st_ace
         code = current_file.read_text() if current_file else ""
-        edited = st_ace(value=code, language="python", theme="twilight", min_lines=18, key="ace_editor")
-    except Exception:
-        edited = st.text_area("Code", value=current_file.read_text() if current_file else "", height=320)
+        content = st_ace(
+            value=code,
+            language="python",
+            theme="twilight",
+            min_lines=20,
+            key="ace_editor",
+        )
+    except:
+        content = st.text_area("Edit", value=current_file.read_text() if current_file else "", height=400)
 
-    if st.button("💾 Save", key="editor_save"):
+    if st.button("💾 Save Changes"):
         if current_file:
-            current_file.write_text(edited)
-            st.success(f"Saved {current_file.name}")
+            current_file.write_text(content)
+            st.success(f"Saved: {current_file.name}")
 
-# ---------------------------------------------------------
-# TAB 3 — TERMINAL
-# ---------------------------------------------------------
-with tab_terminal:
-    st.header("💬 Terminal")
-    if "terminal_history" not in st.session_state:
-        st.session_state.terminal_history = ""
-
-    cmd = st.text_input("Enter shell command:", placeholder="e.g., ls -la, pip list, python main.py")
-
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        run_cmd = st.button("▶️ Run Command", key="terminal_run")
-    with c2:
-        if st.button("🧹 Clear Terminal", key="terminal_clear"):
-            st.session_state.terminal_history = ""
-            st.experimental_rerun()
-
-    term_box = st.empty()
-
-    if run_cmd and cmd.strip():
-        try:
-            process = subprocess.Popen(
-                cmd, shell=True, cwd=str(WORKSPACE),
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-            )
-            for line in process.stdout:
-                st.session_state.terminal_history += line
-                term_box.code(st.session_state.terminal_history, language="bash")
-            process.wait()
-        except Exception as e:
-            st.session_state.terminal_history += f"\n⚠️ Error: {e}\n"
-            term_box.code(st.session_state.terminal_history, language="bash")
-
-    term_box.code(st.session_state.terminal_history or "(Terminal idle…)", language="bash")
-
-st.markdown("---")
-st.caption("Render-Ready • Auto-workspace • Live Agent + Console • Editor & Terminal Tabs • Dark Theme")
-
-
+st.caption("Built with ❤️ by UltimateAI • Replit-style IDE for Render")
