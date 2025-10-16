@@ -214,6 +214,45 @@ with col2:
                 except Exception as e:
                     st.error(f"Review failed: {e}")
 
+# =========================
+# TERMINAL (NEW)
+# =========================
 st.markdown("---")
-st.caption("Streamlit • Replit-style IDE • OpenAI Realtime Streaming • Auto-Run on Save")
+st.subheader("💻 Replit-Style Terminal")
 
+if "terminal_history" not in st.session_state:
+    st.session_state.terminal_history = ""
+
+command = st.text_input("Enter shell command", placeholder="e.g., pip list, ls, python main.py")
+
+col_run, col_clear = st.columns([1, 1])
+with col_run:
+    run = st.button("▶️ Run Command")
+with col_clear:
+    if st.button("🧹 Clear Terminal"):
+        st.session_state.terminal_history = ""
+        st.experimental_rerun()
+
+output_box = st.empty()
+
+if run and command.strip():
+    try:
+        process = subprocess.Popen(
+            command, shell=True, cwd=str(WORKSPACE),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+        live_output = ""
+        for line in process.stdout:
+            live_output += line
+            st.session_state.terminal_history += line
+            output_box.code(st.session_state.terminal_history, language="bash")
+        process.wait()
+    except Exception as e:
+        st.session_state.terminal_history += f"\n⚠️ Error: {e}\n"
+        output_box.code(st.session_state.terminal_history, language="bash")
+
+# Always show the latest terminal history
+output_box.code(st.session_state.terminal_history or "(Terminal idle...)", language="bash")
+
+st.markdown("---")
+st.caption("Streamlit • Replit-style IDE • Terminal • Auto-Run • OpenAI Streaming")
