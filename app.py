@@ -1,5 +1,4 @@
 import os
-import io
 import psutil
 import shlex
 import subprocess
@@ -96,6 +95,7 @@ with col_editor:
 # ---- Console ----
 with col_console:
     st.subheader("🧪 Console")
+    console = st.empty()
 
     def run_file(path: Path, timeout=15):
         if not path.suffix == ".py":
@@ -114,7 +114,7 @@ with col_console:
     if st.button("▶️ Run"):
         if current_file:
             out = run_file(current_file)
-            st.code(out, language="bash")
+            console.code(out, language="bash")
 
 # =========================
 # AGENT / ARCHITECT
@@ -130,6 +130,7 @@ with col1:
     prompt = st.text_area("Describe what to build", height=120)
     target_file = st.text_input("Target file", value=str(current_file.relative_to(WORKSPACE)) if current_file else "main.py")
     stream_mode = st.checkbox("⚡ Stream output live", value=True)
+    auto_run = st.checkbox("🚀 Auto-Run after generation", value=True)
 
     if st.button("✨ Generate"):
         if not os.getenv("OPENAI_API_KEY"):
@@ -140,8 +141,8 @@ with col1:
             dest = WORKSPACE / target_file
             st.info("Generating code...")
             try:
+                output = ""
                 if stream_mode:
-                    # Stream tokens like ChatGPT
                     response_stream = client.chat.completions.stream(
                         model="gpt-4o-mini",
                         messages=[
@@ -151,16 +152,13 @@ with col1:
                         max_tokens=1000,
                         temperature=0.4,
                     )
-                    output = ""
                     placeholder = st.empty()
                     for event in response_stream:
                         if event.type == "message.delta" and event.delta.content:
                             output += event.delta.content
                             placeholder.code(output, language="python")
                     dest.write_text(output)
-                    st.success(f"✅ Code saved to {dest}")
                 else:
-                    # Full completion
                     resp = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[
@@ -173,7 +171,15 @@ with col1:
                     output = resp.choices[0].message.content
                     dest.write_text(output)
                     st.code(output, language="python")
-                    st.success(f"✅ Saved to {dest}")
+
+                st.success(f"✅ Code saved to {dest}")
+
+                # Auto-Run new code
+                if auto_run and dest.suffix == ".py":
+                    st.info("🚀 Running newly generated code...")
+                    run_output = run_file(dest)
+                    console.code(run_output, language="bash")
+
             except Exception as e:
                 st.error(f"Error: {e}")
 
@@ -209,6 +215,5 @@ with col2:
                     st.error(f"Review failed: {e}")
 
 st.markdown("---")
-st.caption("Streamlit • Replit-style IDE • OpenAI Realtime Streaming")
-
+st.caption("Streamlit • Replit-style IDE • OpenAI Realtime Streaming • Auto-Run on Save")
 
