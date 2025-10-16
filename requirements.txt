@@ -1,7 +1,6 @@
 # --- Core stack ---
 streamlit==1.33.0
 numpy==1.26.4
-# ↓ 2.2.3+ have prebuilt wheels for Py 3.13
 pandas==2.2.3
 requests==2.31.0
 pyyaml==6.0.2
@@ -11,7 +10,6 @@ watchdog==4.0.1
 openai==1.12.0
 sentencepiece==0.2.0
 huggingface-hub==0.23.5
-tiktoken==0.7.0
 transformers==4.38.2
 accelerate==0.30.1
 
