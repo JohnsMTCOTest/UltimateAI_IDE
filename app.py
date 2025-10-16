@@ -1,11 +1,19 @@
+import os
 import streamlit as st
+from dotenv import load_dotenv
 from transformers import pipeline
 
-# Page setup
-st.set_page_config(page_title="UltimateAI_IDE", layout="wide")
-st.title("🧠 UltimateAI_IDE — Streamlit AI Development Console")
+# Load environment variables from .env if present
+load_dotenv()
 
-# Tabs
+# Retrieve API keys
+openai_key = os.getenv("OPENAI_API_KEY", "not_set")
+huggingface_key = os.getenv("HUGGINGFACE_API_KEY", "not_set")
+
+# Streamlit page configuration
+st.set_page_config(page_title="UltimateAI_IDE", layout="wide")
+st.title("🧠 UltimateAI_IDE — AI Dev Console")
+
 tabs = st.tabs(["Agent", "Architect", "Hugging Face Sandbox", "Settings"])
 
 # --- AGENT TAB ---
@@ -31,12 +39,13 @@ with tabs[1]:
 with tabs[2]:
     st.header("🤗 Hugging Face Sandbox")
 
+    st.caption(f"Hugging Face Key Loaded: {'✅' if huggingface_key != 'not_set' else '❌ Not Set'}")
+
     model_name = st.text_input(
         "Model Name (default: distilgpt2)",
         value="distilgpt2",
-        help="Enter a Hugging Face model like distilgpt2, gpt2, etc."
+        help="Try text models like distilgpt2 or gpt2."
     )
-
     prompt = st.text_area("Enter your text prompt:", height=150)
     generate_button = st.button("Generate")
 
@@ -53,7 +62,7 @@ with tabs[2]:
 # --- SETTINGS TAB ---
 with tabs[3]:
     st.header("⚙️ Settings")
-    st.text_input("OpenAI API Key (optional)", type="password")
-    st.text_input("Hugging Face API Key (optional)", type="password")
+    st.text_input("OpenAI API Key (current value from .env or Render)", value=openai_key, type="password")
+    st.text_input("Hugging Face API Key (current value from .env or Render)", value=huggingface_key, type="password")
     st.selectbox("Theme", ["Dark", "Light"])
     st.info("Settings are placeholders — full config coming soon.")
