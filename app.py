@@ -6,6 +6,7 @@ import streamlit as st
 from pathlib import Path
 from openai import OpenAI
 from difflib import unified_diff
+import importlib.metadata
 
 # =========================
 # CONFIG
@@ -17,6 +18,14 @@ DEFAULT_FILE = WORKSPACE / "main.py"
 DEFAULT_FILE.touch(exist_ok=True)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Detect OpenAI SDK version
+try:
+    openai_version = importlib.metadata.version("openai")
+except importlib.metadata.PackageNotFoundError:
+    openai_version = "0.0.0"
+
+use_new_sdk = openai_version >= "1.0.0"
 
 # =========================
 # SIDEBAR
@@ -124,7 +133,7 @@ def apply_fixes_with_agent(code_text: str, review_text: str) -> str:
 # HEADER
 # =========================
 st.title("🧠 UltimateAI IDE — Replit-Style Autonomous Flow")
-st.caption("Agent → Architect → Auto-Fix → Run")
+st.caption("Agent → Architect → Auto-Fix → Run (Auto SDK Detection)")
 
 # =========================
 # EDITOR (Reference)
@@ -163,7 +172,7 @@ if st.button("✨ Generate with Agent"):
         st.warning("Enter a description.")
     else:
         dest = WORKSPACE / target_file
-        st.info("🚧 Generating code with Agent...")
+        st.info(f"🚧 Generating code with Agent... (using OpenAI SDK v{openai_version})")
         generated = ""
 
         try:
@@ -177,10 +186,19 @@ if st.button("✨ Generate with Agent"):
                 max_tokens=1300,
                 temperature=0.35,
             )
-            for event in stream.iter_events():
-                if event.type == "message.delta" and event.delta.content:
-                    generated += event.delta.content
-                    agent_box.code(generated, language="python")
+
+            if use_new_sdk:
+                # For new SDK (>=1.0.0)
+                for event in stream.iter_events():
+                    if event.type == "message.delta" and event.delta.content:
+                        generated += event.delta.content
+                        agent_box.code(generated, language="python")
+            else:
+                # For old SDK (<1.0.0)
+                for event in stream:
+                    if hasattr(event, "delta") and getattr(event.delta, "content", None):
+                        generated += event.delta.content
+                        agent_box.code(generated, language="python")
 
             dest.write_text(generated)
             st.success(f"✅ Code generated and saved to {dest}")
@@ -194,7 +212,6 @@ if st.button("✨ Generate with Agent"):
             # ---- AUTO-FIX PHASE ----
             st.info("🤝 Applying Architect’s fixes automatically...")
             fixed_code = apply_fixes_with_agent(generated, review_text)
-
             show_split_diff(generated, fixed_code)
             dest.write_text(fixed_code)
             fix_box.success("✅ Auto-fixed file saved.")
@@ -245,6 +262,4 @@ if run_cmd and cmd.strip():
 term_box.code(st.session_state.terminal_history or "(Terminal idle…)", language="bash")
 
 st.markdown("---")
-st.caption("Replit-Style IDE • Agent → Architect → Auto-Fix → Run • Dark Theme")
-
-
+st.caption("Replit-Style IDE • Agent → Architect → Auto-Fix → Run • Dual SDK Compatible • Dark Theme")
