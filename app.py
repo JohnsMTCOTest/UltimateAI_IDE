@@ -78,7 +78,6 @@ def run_file(path: Path, timeout=25):
         return f"$ {cmd}\n\n❌ Timed out after {timeout}s."
 
 def show_split_diff(before: str, after: str):
-    """Render side-by-side diff with dark style."""
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("#### 🧩 Before (Agent Output)")
@@ -88,7 +87,6 @@ def show_split_diff(before: str, after: str):
         st.code(after, language="python")
 
 def architect_review(code_text: str) -> str:
-    """Architect reviews code and suggests improvements."""
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -107,7 +105,6 @@ def architect_review(code_text: str) -> str:
     return resp.choices[0].message.content
 
 def apply_fixes_with_agent(code_text: str, review_text: str) -> str:
-    """Agent applies fixes from Architect's review autonomously."""
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -129,23 +126,7 @@ def apply_fixes_with_agent(code_text: str, review_text: str) -> str:
 # HEADER
 # =========================
 st.title("🧠 UltimateAI IDE — Replit-Style Autonomous Flow")
-st.caption("Agent → Architect → Auto-Fix → Run • Universal SDK-Compatible")
-
-# =========================
-# EDITOR (Reference)
-# =========================
-st.markdown("## 💻 Code Editor")
-try:
-    from streamlit_ace import st_ace
-    code = current_file.read_text() if current_file else ""
-    edited = st_ace(value=code, language="python", theme="twilight", min_lines=18, key="ace_editor")
-except Exception:
-    edited = st.text_area("Code", value=current_file.read_text() if current_file else "", height=320)
-
-if st.button("💾 Save"):
-    if current_file:
-        current_file.write_text(edited)
-        st.success(f"Saved {current_file.name}")
+st.caption("Agent → Architect → Auto-Fix → Run • With Manual Console + Editor Below Agent")
 
 # =========================
 # REPLIT-STYLE FLOW
@@ -184,7 +165,6 @@ if st.button("✨ Generate with Agent"):
                     temperature=0.35,
                 )
 
-                # UNIVERSAL STREAMING: works for all SDKs
                 iterator = getattr(stream, "iter_events", lambda: stream)()
                 for event in iterator:
                     delta = getattr(event, "delta", None)
@@ -224,11 +204,58 @@ if st.button("✨ Generate with Agent"):
 
             # ---- RUN PHASE ----
             st.info("🚀 Running final version…")
-            run_output = run_file(dest)
-            run_box.code(run_output, language="bash")
+            try:
+                run_output = run_file(dest)
+                st.markdown("### 🧪 Console Output")
+                if not run_output.strip():
+                    run_box.warning("⚠️ No output captured from script.")
+                else:
+                    run_box.code(run_output, language="bash")
+            except subprocess.TimeoutExpired:
+                run_box.error("❌ Script timed out.")
+            except FileNotFoundError:
+                run_box.error(f"⚠️ Could not find file: {dest}")
+            except Exception as e:
+                run_box.error(f"⚠️ Error while running script: {e}")
 
         except Exception as e:
             st.error(f"Process failed: {e}")
+
+# =========================
+# 💻 CODE EDITOR (moved below Agent)
+# =========================
+st.markdown("---")
+st.header("💻 Code Editor (Live Files)")
+try:
+    from streamlit_ace import st_ace
+    code = current_file.read_text() if current_file else ""
+    edited = st_ace(value=code, language="python", theme="twilight", min_lines=18, key="ace_editor")
+except Exception:
+    edited = st.text_area("Code", value=current_file.read_text() if current_file else "", height=320)
+
+if st.button("💾 Save"):
+    if current_file:
+        current_file.write_text(edited)
+        st.success(f"Saved {current_file.name}")
+
+# =========================
+# 🧪 MANUAL CONSOLE SECTION
+# =========================
+st.markdown("---")
+st.header("🧪 Console (Run Selected File)")
+
+console_col1, console_col2 = st.columns([1, 3])
+with console_col1:
+    run_now = st.button("▶️ Run Selected File")
+with console_col2:
+    console_output = st.empty()
+
+if run_now and current_file:
+    output = run_file(current_file)
+    if not output.strip():
+        console_output.warning("⚠️ No output captured from script.")
+    else:
+        console_output.code(output, language="bash")
 
 # =========================
 # TERMINAL
@@ -268,5 +295,4 @@ if run_cmd and cmd.strip():
 term_box.code(st.session_state.terminal_history or "(Terminal idle…)", language="bash")
 
 st.markdown("---")
-st.caption("Replit-Style IDE • Agent → Architect → Auto-Fix → Run • Universal Streaming Fix • Dark Theme")
-
+st.caption("Replit-Style IDE • Agent → Architect → Auto-Fix → Run • Code Editor Below Agent • Manual Console + Terminal • Dark Theme")
