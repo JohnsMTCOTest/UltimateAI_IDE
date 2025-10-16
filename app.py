@@ -1,46 +1,72 @@
-# UltimateAI IDE — Replit-Style with Smart Agent + Console + Web Preview
-
 import os
-import shlex
 import subprocess
-import socket
+import shlex
 from pathlib import Path
-import streamlit as st
+
 import psutil
-from openai import OpenAI
+import streamlit as st
+from streamlit_ace import st_ace
 
 # =========================
-# CONFIG + SETUP
+# SETUP
 # =========================
-st.set_page_config(page_title="UltimateAI IDE (Replit-style)", layout="wide")
+st.set_page_config(page_title="UltimateAI IDE", layout="wide")
 WORKSPACE = Path("workspace")
+TEMPLATE_DIR = WORKSPACE / "templates"
+MAIN_FILE = WORKSPACE / "app.py"
+INDEX_FILE = TEMPLATE_DIR / "index.html"
 WORKSPACE.mkdir(exist_ok=True)
-DEFAULT_FILE = WORKSPACE / "main.py"
-DEFAULT_FILE.touch(exist_ok=True)
+TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Preload Flask app if not already present
+if not MAIN_FILE.exists():
+    MAIN_FILE.write_text("""\
+from flask import Flask, render_template
+import os
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+if __name__ == "__main__":
+    app.run(debug=os.getenv("FLASK_DEBUG", "0") == "1")
+""")
+
+if not INDEX_FILE.exists():
+    INDEX_FILE.write_text("""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Test Flask Site</title>
+</head>
+<body>
+  <h1>Hello from Flask!</h1>
+  <p>This is your IDE Preview working without OpenAI.</p>
+</body>
+</html>
+""")
 
 # =========================
-# SIDEBAR: Files + Metrics
+# SIDEBAR — File Browser
 # =========================
-st.sidebar.title("📁 Project Files")
+st.sidebar.title("📁 Workspace Files")
 
 def list_files(root):
     return sorted([p for p in root.rglob("*") if p.is_file()])
 
-def select_file_ui():
-    files = list_files(WORKSPACE)
-    rel_paths = [str(p.relative_to(WORKSPACE)) for p in files] or ["(no files)"]
-    selected = st.sidebar.selectbox("Select file", rel_paths)
-    return WORKSPACE / selected if selected != "(no files)" else None
-
-current_file = select_file_ui()
+files = list_files(WORKSPACE)
+rel_paths = [str(p.relative_to(WORKSPACE)) for p in files]
+selected_file = st.sidebar.selectbox("Select File", rel_paths)
+current_file = WORKSPACE / selected_file if selected_file else None
 
 with st.sidebar.expander("➕ Create / Delete"):
-    new_path = st.text_input("New path", value="new_file.py")
+    new_path = st.text_input("New file path", "new_file.py")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Create File"):
+        if st.button("Create"):
             p = WORKSPACE / new_path
             p.parent.mkdir(parents=True, exist_ok=True)
             p.touch(exist_ok=True)
@@ -51,94 +77,28 @@ with st.sidebar.expander("➕ Create / Delete"):
             p = WORKSPACE / new_path
             if p.exists():
                 p.unlink()
-                st.success("Deleted!")
+                st.success(f"Deleted {p}")
                 st.rerun()
 
-cpu = psutil.cpu_percent(interval=0.2)
-ram = psutil.virtual_memory().percent
-st.sidebar.markdown("---")
-st.sidebar.write(f"CPU: {cpu}% | RAM: {ram}%")
-
 # =========================
-# MAIN UI LAYOUT
+# MAIN TABS
 # =========================
-st.title("🧠 UltimateAI IDE (Replit-style)")
-col_agent, col_console = st.columns([1.8, 1.2])
+tab1, tab2, tab3 = st.tabs(["💻 Editor", "🧪 Console", "🌐 Preview"])
 
-# =========================
-# LEFT: Agent
-# =========================
-with col_agent:
-    st.subheader("🤖 AI Agent (Generate Code)")
-    prompt = st.text_area("Describe what to build", height=120)
-    target_file = st.text_input("Target file", value="main.py")
-    stream_mode = st.checkbox("⚡ Stream output live", value=True)
-    auto_run = st.checkbox("🚀 Auto-Run after generation", value=True)
+# ---- Code Editor ----
+with tab1:
+    st.subheader("💻 Code Editor")
+    code = current_file.read_text() if current_file and current_file.exists() else ""
+    content = st_ace(value=code, language="python", theme="twilight", key="ace_editor", min_lines=20)
+    if st.button("💾 Save"):
+        if current_file:
+            current_file.write_text(content)
+            st.success(f"Saved {current_file.name}")
 
-    if st.button("✨ Generate"):
-        dest = WORKSPACE / target_file
-        dest.parent.mkdir(parents=True, exist_ok=True)
-
-        if not os.getenv("OPENAI_API_KEY"):
-            st.error("Missing OPENAI_API_KEY.")
-        elif not prompt.strip():
-            st.warning("Please enter a prompt.")
-        else:
-            st.info("Generating code...")
-            output = ""
-            try:
-                if stream_mode:
-                    stream = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {"role": "system", "content": "You are an expert developer. Output clean, working code only."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        stream=True,
-                        max_tokens=1000,
-                        temperature=0.5,
-                    )
-                    placeholder = st.empty()
-                    for chunk in stream:
-                        delta = chunk.choices[0].delta
-                        if delta.content:
-                            output += delta.content
-                            placeholder.code(output, language="python")
-                else:
-                    resp = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {"role": "system", "content": "You are an expert developer."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        max_tokens=1000,
-                        temperature=0.4,
-                    )
-                    output = resp.choices[0].message.content
-                    st.code(output, language="python")
-
-                dest.write_text(output)
-                st.success(f"✅ Saved to {dest.relative_to(WORKSPACE)}")
-
-                if auto_run and dest.suffix == ".py":
-                    st.info("Auto-running...")
-                    st.session_state.run_target = dest
-
-            except Exception as e:
-                st.error(f"Generation failed: {e}")
-
-# =========================
-# RIGHT: Console
-# =========================
-with col_console:
-    st.subheader("🧪 Console")
-    console = st.empty()
-
-    def run_file(path: Path, timeout=15):
-        if not path.exists():
-            return f"❌ File not found: {path}"
-        if path.suffix != ".py":
-            return f"❌ Cannot run non-Python file: {path.name}"
+# ---- Console Runner ----
+with tab2:
+    st.subheader("🧪 Console Output")
+    def run_file(path: Path, timeout=20):
         cmd = f"python -u {shlex.quote(str(path))}"
         try:
             proc = subprocess.run(
@@ -146,41 +106,44 @@ with col_console:
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 timeout=timeout, text=True
             )
-            return f"$ {cmd}\n\n{proc.stdout}{proc.stderr}\nExit code: {proc.returncode}"
+            return f"$ {cmd}\n\n{proc.stdout}\n{proc.stderr}\nExit code: {proc.returncode}"
         except subprocess.TimeoutExpired:
-            return f"❌ Timed out after {timeout}s."
+            return f"$ {cmd}\n\n❌ Timed out after {timeout}s."
 
-    run_path = st.session_state.get("run_target", DEFAULT_FILE)
+    if st.button("▶️ Run File"):
+        if current_file and current_file.suffix == ".py":
+            st.code(run_file(current_file), language="bash")
+        else:
+            st.warning("Select a .py file to run.")
 
-    if st.button("▶️ Run"):
-        out = run_file(run_path)
-        console.code(out, language="bash")
-
-        if "Flask" in out or "Running on http://" in out:
-            hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME") or socket.gethostname()
-            st.success("🌐 Flask app likely running.")
-            st.markdown(f"**Open in browser:** [https://{hostname}](https://{hostname})")
+# ---- Live Preview ----
+with tab3:
+    st.subheader("🌐 Live Web Preview")
+    st.markdown("This section assumes you're running a Flask app on Render.")
+    st.info("👉 When deployed, you can embed your Render web URL here using an iframe.")
+    st.code("https://your-render-url.onrender.com", language="text")
+    # st.components.v1.iframe("https://your-render-url.onrender.com", height=500)
 
 # =========================
-# Optional: File Editor Below
+# COMMENTED OUT: AGENT SECTION
 # =========================
-with st.expander("📝 Code Editor (View/Edit Any File)"):
-    try:
-        from streamlit_ace import st_ace
-        code = current_file.read_text() if current_file else ""
-        content = st_ace(
-            value=code,
-            language="python",
-            theme="twilight",
-            min_lines=20,
-            key="ace_editor",
-        )
-    except:
-        content = st.text_area("Edit", value=current_file.read_text() if current_file else "", height=400)
+"""
+# === Agent (Temporarily Disabled) ===
+from openai import OpenAI
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-    if st.button("💾 Save Changes"):
-        if current_file:
-            current_file.write_text(content)
-            st.success(f"Saved: {current_file.name}")
+st.markdown("---")
+st.subheader("🤖 AI Agent (Disabled)")
+prompt = st.text_area("Describe what to build")
+if st.button("✨ Generate (disabled)"):
+    st.warning("Agent temporarily disabled due to insufficient OpenAI quota.")
+"""
 
-st.caption("Built with ❤️ by UltimateAI • Replit-style IDE for Render")
+# =========================
+# SYSTEM STATS
+# =========================
+cpu = psutil.cpu_percent(interval=0.2)
+ram = psutil.virtual_memory().percent
+st.sidebar.markdown("---")
+st.sidebar.write(f"CPU: {cpu}% | RAM: {ram}%")
+
