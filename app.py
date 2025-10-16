@@ -110,110 +110,114 @@ def apply_fixes_with_agent(code_text: str, review_text: str) -> str:
     )
     return resp.choices[0].message.content
 
-
 # =========================
 # HEADER
 # =========================
-st.title("🧠 UltimateAI IDE — Replit-Style Tabs")
-st.caption("Agent • Editor • Console • Terminal")
+st.title("🧠 UltimateAI IDE — Replit-Style Split View")
+st.caption("Agent (left) • Console (right) • Editor & Terminal as Tabs")
 
 # =========================
 # MAIN TAB STRUCTURE
 # =========================
-tab_agent, tab_editor, tab_console, tab_terminal = st.tabs(
-    ["🤖 Agent", "💻 Editor", "🧪 Console", "💬 Terminal"]
+tab_main, tab_editor, tab_terminal = st.tabs(
+    ["🧠 Agent + Console", "💻 Editor", "💬 Terminal"]
 )
 
 # ---------------------------------------------------------
-# TAB 1 — AGENT
+# TAB 1 — AGENT + CONSOLE SIDE BY SIDE
 # ---------------------------------------------------------
-with tab_agent:
-    st.header("🤖 AI Agent (Chat-to-Build)")
-    prompt = st.text_area("Describe what to build or modify:", height=140)
-    target_file = st.text_input("Target file:", value=str(current_file.relative_to(WORKSPACE)) if current_file else "main.py")
+with tab_main:
+    left, right = st.columns([1.4, 1])
 
-    agent_box = st.empty()
-    review_box = st.empty()
-    fix_box = st.empty()
-    run_box = st.empty()
+    with left:
+        st.subheader("🤖 AI Agent (Chat-to-Build)")
+        prompt = st.text_area("Describe what to build or modify:", height=140)
+        target_file = st.text_input("Target file:", value=str(current_file.relative_to(WORKSPACE)) if current_file else "main.py")
 
-    if st.button("✨ Generate with Agent", key="agent_generate"):
-        if not os.getenv("OPENAI_API_KEY"):
-            st.error("Missing OPENAI_API_KEY.")
-        elif not prompt.strip():
-            st.warning("Enter a description.")
-        else:
-            dest = WORKSPACE / target_file
-            st.info(f"🚧 Generating code with Agent... (OpenAI v{openai_version})")
-            generated = ""
+        agent_box = st.empty()
+        review_box = st.empty()
+        fix_box = st.empty()
 
-            try:
-                # ---- AGENT PHASE ----
+        if st.button("✨ Generate with Agent", key="agent_generate"):
+            if not os.getenv("OPENAI_API_KEY"):
+                st.error("Missing OPENAI_API_KEY.")
+            elif not prompt.strip():
+                st.warning("Enter a description.")
+            else:
+                dest = WORKSPACE / target_file
+                st.info(f"🚧 Generating code with Agent... (OpenAI v{openai_version})")
+                generated = ""
+
                 try:
-                    stream = client.chat.completions.stream(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {"role": "system", "content": "You are the Agent. Write full, clean, self-contained code only."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        max_tokens=1300,
-                        temperature=0.35,
-                    )
-                    iterator = getattr(stream, "iter_events", lambda: stream)()
-                    for event in iterator:
-                        delta = getattr(event, "delta", None)
-                        if delta and getattr(delta, "content", None):
-                            generated += delta.content
-                            agent_box.code(generated, language="python")
+                    # ---- AGENT PHASE ----
+                    try:
+                        stream = client.chat.completions.stream(
+                            model="gpt-4o-mini",
+                            messages=[
+                                {"role": "system", "content": "You are the Agent. Write full, clean, self-contained code only."},
+                                {"role": "user", "content": prompt},
+                            ],
+                            max_tokens=1300,
+                            temperature=0.35,
+                        )
+                        iterator = getattr(stream, "iter_events", lambda: stream)()
+                        for event in iterator:
+                            delta = getattr(event, "delta", None)
+                            if delta and getattr(delta, "content", None):
+                                generated += delta.content
+                                agent_box.code(generated, language="python")
 
-                except Exception as stream_error:
-                    st.warning(f"⚠️ Streaming failed ({stream_error}); using non-streaming mode.")
-                    resp = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {"role": "system", "content": "You are the Agent. Return complete Python code only."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        max_tokens=1300,
-                        temperature=0.35,
-                    )
-                    generated = resp.choices[0].message.content
-                    agent_box.code(generated, language="python")
+                    except Exception as stream_error:
+                        st.warning(f"⚠️ Streaming failed ({stream_error}); switching to non-streaming mode.")
+                        resp = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[
+                                {"role": "system", "content": "You are the Agent. Return complete Python code only."},
+                                {"role": "user", "content": prompt},
+                            ],
+                            max_tokens=1300,
+                            temperature=0.35,
+                        )
+                        generated = resp.choices[0].message.content
+                        agent_box.code(generated, language="python")
 
-                dest.write_text(generated)
-                st.success(f"✅ Code generated and saved to {dest}")
+                    dest.write_text(generated)
+                    st.success(f"✅ Code generated and saved to {dest}")
 
-                # ---- ARCHITECT PHASE ----
-                st.info("🏗️ Architect reviewing generated code...")
-                review_text = architect_review(generated)
-                review_box.markdown("### 🧾 Architect Review")
-                review_box.write(review_text)
+                    # ---- ARCHITECT PHASE ----
+                    st.info("🏗️ Architect reviewing generated code...")
+                    review_text = architect_review(generated)
+                    review_box.markdown("### 🧾 Architect Review")
+                    review_box.write(review_text)
 
-                # ---- AUTO-FIX PHASE ----
-                st.info("🤝 Applying Architect’s fixes automatically...")
-                fixed_code = apply_fixes_with_agent(generated, review_text)
-                show_split_diff(generated, fixed_code)
-                dest.write_text(fixed_code)
-                fix_box.success("✅ Auto-fixed file saved.")
+                    # ---- AUTO-FIX PHASE ----
+                    st.info("🤝 Applying Architect’s fixes automatically...")
+                    fixed_code = apply_fixes_with_agent(generated, review_text)
+                    show_split_diff(generated, fixed_code)
+                    dest.write_text(fixed_code)
+                    fix_box.success("✅ Auto-fixed file saved.")
 
-                # ---- RUN PHASE ----
-                st.info("🚀 Running final version…")
-                try:
-                    run_output = run_file(dest)
-                    st.markdown("### 🧪 Console Output")
-                    if not run_output.strip():
-                        run_box.warning("⚠️ No output captured from script.")
-                    else:
-                        run_box.code(run_output, language="bash")
-                except subprocess.TimeoutExpired:
-                    run_box.error("❌ Script timed out.")
-                except FileNotFoundError:
-                    run_box.error(f"⚠️ File not found: {dest}")
+                    # trigger run output on the right side
+                    st.session_state["last_run_file"] = str(dest)
+
                 except Exception as e:
-                    run_box.error(f"⚠️ Error while running script: {e}")
+                    st.error(f"Process failed: {e}")
 
-            except Exception as e:
-                st.error(f"Process failed: {e}")
+    with right:
+        st.subheader("🧪 Console Output")
+        if "last_run_file" not in st.session_state:
+            st.session_state["last_run_file"] = None
+
+        run_button = st.button("▶️ Run Latest Build", key="run_latest")
+        run_box = st.empty()
+
+        if run_button and st.session_state["last_run_file"]:
+            dest = Path(st.session_state["last_run_file"])
+            run_output = run_file(dest)
+            if not run_output.strip():
+                run_box.warning("⚠️ No output captured from script.")
+            else:
+                run_box.code(run_output, language="bash")
 
 # ---------------------------------------------------------
 # TAB 2 — EDITOR
@@ -233,25 +237,7 @@ with tab_editor:
             st.success(f"Saved {current_file.name}")
 
 # ---------------------------------------------------------
-# TAB 3 — CONSOLE
-# ---------------------------------------------------------
-with tab_console:
-    st.header("🧪 Console (Run Selected File)")
-    console_col1, console_col2 = st.columns([1, 3])
-    with console_col1:
-        run_now = st.button("▶️ Run Selected File", key="console_run")
-    with console_col2:
-        console_output = st.empty()
-
-    if run_now and current_file:
-        output = run_file(current_file)
-        if not output.strip():
-            console_output.warning("⚠️ No output captured from script.")
-        else:
-            console_output.code(output, language="bash")
-
-# ---------------------------------------------------------
-# TAB 4 — TERMINAL
+# TAB 3 — TERMINAL
 # ---------------------------------------------------------
 with tab_terminal:
     st.header("💬 Terminal")
@@ -287,5 +273,5 @@ with tab_terminal:
     term_box.code(st.session_state.terminal_history or "(Terminal idle…)", language="bash")
 
 st.markdown("---")
-st.caption("Replit-Style IDE • Tabs: Agent | Editor | Console | Terminal • Persistent Workspace")
+st.caption("Replit-Style IDE • Agent ↔ Console Split • Editor & Terminal Tabs • Dark Theme")
 
