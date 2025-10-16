@@ -59,7 +59,8 @@ def list_files(root):
 
 files = list_files(WORKSPACE)
 rel_paths = [str(p.relative_to(WORKSPACE)) for p in files]
-selected_file = st.sidebar.selectbox("Select File", rel_paths)
+default_file = "app.py" if "app.py" in rel_paths else rel_paths[0] if rel_paths else None
+selected_file = st.sidebar.selectbox("Select File", rel_paths, index=rel_paths.index(default_file) if default_file else 0)
 current_file = WORKSPACE / selected_file if selected_file else None
 
 with st.sidebar.expander("➕ Create / Delete"):
